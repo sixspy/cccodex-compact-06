@@ -1,7 +1,12 @@
-"""小文件清单：登记、列表、作废。"""
+"""小文件清单：登记、列表、作废。
+
+登记时钉住当时的阈值与切流凭证号（碎片侧的切流芯片），与台参数、计划、
+合并任务同一口径。
+"""
 from __future__ import annotations
 
 from app.db import get_db
+from app.services import settings as settings_svc
 from app.services.errors import ServiceError
 
 
@@ -17,6 +22,25 @@ def list_files(table_name: str | None = None, db_path: str | None = None) -> lis
         return [dict(r) for r in rows]
 
 
+def files_snapshot(table_name: str | None = None, db_path: str | None = None) -> dict:
+    with get_db(db_path) as conn:
+        if table_name:
+            rows = conn.execute(
+                "SELECT * FROM lake_files WHERE table_name=? ORDER BY id",
+                (table_name,),
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM lake_files ORDER BY id").fetchall()
+        current_kb = settings_svc.current_threshold(conn)
+        latest = settings_svc.latest_cutover(conn)
+        return {
+            "items": [dict(r) for r in rows],
+            "stats": table_stats(db_path),
+            "current_threshold_kb": current_kb,
+            "latest_cutover": latest,
+        }
+
+
 def register_file(
     path: str,
     table_name: str,
@@ -30,11 +54,14 @@ def register_file(
     if size_bytes <= 0:
         raise ServiceError("体积必须大于 0")
     with get_db(db_path) as conn:
+        current_kb = settings_svc.current_threshold(conn)
+        cutover_code = settings_svc.latest_cutover_code(conn)
         try:
             cur = conn.execute(
-                "INSERT INTO lake_files(path, table_name, size_bytes, status) "
-                "VALUES (?,?,?, '碎文件')",
-                (path, table_name, int(size_bytes)),
+                "INSERT INTO lake_files"
+                "(path, table_name, size_bytes, status, threshold_kb, cutover_code) "
+                "VALUES (?,?,?, '碎文件', ?, ?)",
+                (path, table_name, int(size_bytes), current_kb, cutover_code),
             )
         except Exception as exc:
             raise ServiceError(f"登记失败：路径可能重复（{exc})") from exc

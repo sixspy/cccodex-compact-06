@@ -7,12 +7,7 @@ class ApiFiles(BaseHandler):
     def get(self):
         self.require_user()
         table = self.get_argument("table_name", default="") or None
-        self.json(
-            {
-                "items": files_svc.list_files(table),
-                "stats": files_svc.table_stats(),
-            }
-        )
+        self.json(files_svc.files_snapshot(table))
 
     def post(self):
         self.require_user()

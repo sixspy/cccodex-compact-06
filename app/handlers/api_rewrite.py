@@ -10,5 +10,5 @@ class ApiRewriteJobs(BaseHandler):
 
 class ApiRewriteStart(BaseHandler):
     def post(self, plan_id: str):
-        self.require_user()
-        self.json({"job": rewrite_svc.start_rewrite(int(plan_id))})
+        operator = self.require_user()
+        self.json({"job": rewrite_svc.start_rewrite(int(plan_id), operator=operator)})

@@ -1,7 +1,12 @@
-"""重写合并：按计划执行合并任务。"""
+"""重写合并：按计划执行合并任务。
+
+在途单口径必须与现行阈值对齐才允许启动；任务行记下执行时的阈值与
+切流凭证号（切流芯片），便于对账时追到具体口径。
+"""
 from __future__ import annotations
 
 from app.db import get_db
+from app.services import settings as settings_svc
 from app.services.errors import ServiceError
 
 
@@ -14,7 +19,9 @@ def list_jobs(db_path: str | None = None) -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def start_rewrite(plan_id: int, db_path: str | None = None) -> dict:
+def start_rewrite(
+    plan_id: int, operator: str = "", db_path: str | None = None
+) -> dict:
     with get_db(db_path) as conn:
         plan = conn.execute(
             "SELECT * FROM compact_plans WHERE id=?", (plan_id,)
@@ -29,6 +36,27 @@ def start_rewrite(plan_id: int, db_path: str | None = None) -> dict:
         ).fetchone()
         if running:
             raise ServiceError("已有在途合并任务", 409)
+        current_kb = settings_svc.current_threshold(conn)
+        latest_code = settings_svc.latest_cutover_code(conn)
+        plan_kb = int(plan["threshold_kb"] or 0)
+        plan_code = plan["cutover_code"] or ""
+        if plan_kb != current_kb or plan_code != latest_code:
+            reason = (
+                f"在途单口径 {plan_kb} KB / 凭证 {plan_code or '无'} "
+                f"与现行 {current_kb} KB / 凭证 {latest_code or '无'} 不一致"
+            )
+            settings_svc.record_rejection(
+                plan_id=plan_id,
+                cutover_code=latest_code,
+                attempted_kb=plan_kb,
+                current_kb=current_kb,
+                operator=operator,
+                reason=reason,
+                db_path=db_path,
+            )
+            raise ServiceError(
+                f"启动被拦：{reason}。切流凭证号 {latest_code or '无'}", 409
+            )
         items = conn.execute(
             "SELECT f.* FROM plan_items i JOIN lake_files f ON f.id=i.file_id "
             "WHERE i.plan_id=? AND f.status='已入计划'",
@@ -38,9 +66,10 @@ def start_rewrite(plan_id: int, db_path: str | None = None) -> dict:
             raise ServiceError("计划下无可合并碎文件", 409)
         total = sum(int(x["size_bytes"]) for x in items)
         cur = conn.execute(
-            "INSERT INTO rewrite_jobs(plan_id, status, merged_bytes, message, started_at) "
-            "VALUES (?, '执行中', 0, '合并进行中', datetime('now'))",
-            (plan_id,),
+            "INSERT INTO rewrite_jobs"
+            "(plan_id, status, merged_bytes, message, threshold_kb, cutover_code, started_at) "
+            "VALUES (?, '执行中', 0, '合并进行中', ?, ?, datetime('now'))",
+            (plan_id, current_kb, latest_code),
         )
         job_id = cur.lastrowid
         conn.execute(

@@ -7,7 +7,7 @@ export async function renderRewrite(view, setMsg) {
   view.innerHTML = `
     <section class="card">
       <h2>重写合并</h2>
-      <p class="muted">对已发布计划启动合并；成功后碎文件变为已合并。</p>
+      <p class="muted">对已发布计划启动合并；成功后碎文件变为已合并。在途单口径须与现行阈值对齐。</p>
       <div class="row">
         <label>计划<select id="pid">${options}</select></label>
         <button class="primary" id="go" type="button">启动合并</button>
@@ -17,6 +17,8 @@ export async function renderRewrite(view, setMsg) {
       ${(jobs.items || []).map(j => `<article class="card">
         <h3>${j.plan_code || ('计划#'+j.plan_id)}</h3>
         <span class="tag">${j.status}</span>
+        <span class="chip">${j.threshold_kb || 0} KB</span>
+        ${j.cutover_code ? `<span class="chip">切流 ${j.cutover_code}</span>` : ''}
         <p class="muted">${j.message}</p>
         <p>合并字节 ${j.merged_bytes}</p>
       </article>`).join('') || '<p class="muted">尚无合并任务</p>'}
@@ -27,6 +29,6 @@ export async function renderRewrite(view, setMsg) {
       const r = await api('/api/rewrite/plans/' + pid + '/start', { method:'POST', body:'{}' });
       setMsg('合并完成 · ' + r.job.status);
       await renderRewrite(view, setMsg);
-    } catch (e) { setMsg(e.message, true); }
+    } catch (e) { setMsg(e.message, true); await renderRewrite(view, setMsg); }
   };
 }

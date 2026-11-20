@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS lake_files (
   table_name TEXT NOT NULL,
   size_bytes INTEGER NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('碎文件','已入计划','已合并','作废')),
+  threshold_kb INTEGER NOT NULL DEFAULT 0,
+  cutover_code TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -21,6 +23,8 @@ CREATE TABLE IF NOT EXISTS compact_plans (
   status TEXT NOT NULL CHECK (status IN ('草稿','已发布','执行中','已完成','已作废')),
   target_table TEXT NOT NULL,
   note TEXT NOT NULL DEFAULT '',
+  threshold_kb INTEGER NOT NULL DEFAULT 0,
+  cutover_code TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -37,6 +41,8 @@ CREATE TABLE IF NOT EXISTS rewrite_jobs (
   status TEXT NOT NULL CHECK (status IN ('待执行','执行中','成功','失败')),
   merged_bytes INTEGER NOT NULL DEFAULT 0,
   message TEXT NOT NULL DEFAULT '',
+  threshold_kb INTEGER NOT NULL DEFAULT 0,
+  cutover_code TEXT NOT NULL DEFAULT '',
   started_at TEXT,
   finished_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -58,6 +64,27 @@ CREATE TABLE IF NOT EXISTS lab_settings (
   label TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS threshold_cutovers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  cutover_code TEXT NOT NULL UNIQUE,
+  old_threshold_kb INTEGER NOT NULL,
+  new_threshold_kb INTEGER NOT NULL,
+  operator TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS cutover_rejections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan_id INTEGER NOT NULL,
+  cutover_code TEXT NOT NULL DEFAULT '',
+  attempted_kb INTEGER,
+  current_kb INTEGER NOT NULL,
+  operator TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -68,10 +95,19 @@ CREATE TABLE IF NOT EXISTS meta (
 def connect(db_path: str | None = None) -> sqlite3.Connection:
     path = db_path or Config.database()
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, check_same_thread=False)
+    conn = sqlite3.connect(path, check_same_thread=False, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # busy_timeout pairs with BEGIN IMMEDIATE: a second keeper's write waits for
+    # the first cutover to commit instead of overwriting its credential.
+    conn.execute("PRAGMA busy_timeout = 15000")
     return conn
+
+
+def begin_immediate(conn: sqlite3.Connection) -> None:
+    """拿写锁；若事务已开则沿用（幂等）。"""
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
 
 
 @contextmanager
@@ -89,4 +125,5 @@ def get_db(db_path: str | None = None):
 
 def init_schema(db_path: str | None = None) -> None:
     with get_db(db_path) as conn:
+        conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)

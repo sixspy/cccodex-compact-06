@@ -11,7 +11,7 @@ from app.handlers.api_plans import (
 )
 from app.handlers.api_reconcile import ApiReconcileReports
 from app.handlers.api_rewrite import ApiRewriteJobs, ApiRewriteStart
-from app.handlers.api_settings import ApiSettings
+from app.handlers.api_settings import ApiSettings, ApiThresholdCutovers
 from app.handlers.auth import (
     ApiLogin,
     ApiLogout,
@@ -45,6 +45,7 @@ def make_app() -> tornado.web.Application:
             (r"/api/rewrite/plans/([0-9]+)/start", ApiRewriteStart),
             (r"/api/reconcile/reports", ApiReconcileReports),
             (r"/api/settings", ApiSettings),
+            (r"/api/settings/cutovers", ApiThresholdCutovers),
             (
                 r"/static/(.*)",
                 tornado.web.StaticFileHandler,

@@ -26,7 +26,16 @@ main { padding:1.2rem 1.4rem 2rem; }
 .err { color:#ff8f8f; }
 .wall { display:grid; gap:.8rem; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 .tag { display:inline-block; padding:.15rem .45rem; border-radius:999px; background:#243049; font-size:.8rem; }
+.chip { display:inline-block; margin:.15rem .3rem .15rem 0; padding:.15rem .5rem; border-radius:999px; background:#1f3a5f; color:#bfe0ff; font-size:.78rem; border:1px solid #2f5b8f; }
+.chip.ok { background:#173a2f; color:#8ff0c9; border-color:#2b6b52; }
+.chip.stale { background:#3d2a12; color:#ffcf7a; border-color:#6b4a1c; }
+.kv { display:grid; grid-template-columns:max-content 1fr; gap:.2rem .7rem; font-size:.9rem; }
+.kv dt { color:var(--muted); }
+.kv dd { margin:0; }
 label { display:grid; gap:.3rem; font-size:.9rem; color:var(--muted); }
 input, select { width:100%; padding:.5rem .6rem; border-radius:8px; border:1px solid var(--line); background:#0f1522; color:var(--text); }
 h1,h2,h3 { margin:.2rem 0 .6rem; }
 .row { display:flex; gap:.6rem; flex-wrap:wrap; align-items:end; }
+.tbl { width:100%; border-collapse:collapse; font-size:.88rem; }
+.tbl th, .tbl td { text-align:left; padding:.35rem .5rem; border-bottom:1px solid var(--line); vertical-align:top; }
+.tbl th { color:var(--muted); font-weight:600; }
